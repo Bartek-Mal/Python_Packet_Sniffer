@@ -5,6 +5,7 @@ from threading import Thread
 
 action = None
 packet_number = 0
+packet_hexdumps = []
 
 def sniffing_action():
     global action
@@ -50,11 +51,38 @@ def packet_callback(packet):
         packet_info = f"#{packet_number}. Protocol: {proto} | Source: {ip_src}:{sport} -> Destination: {ip_dst}:{dport}\n"
         output_text.insert(tk.END, packet_info)
         output_text.yview(tk.END)
+        
         # hexdump(packet)
+        packet_hexdump = hexdump(packet, dump=True)
+        packet_hexdumps.append(packet_hexdump)
 
 def start_sniffing(interface=None):
     sniff(iface=interface, prn=packet_callback, store=False)
 
+def on_click(event):
+    index = output_text.index(f"@{event.x},{event.y}")
+    line_number = int(index.split('.')[0])  # Extract the line number and convert to int
+
+    if line_number <=len(packet_hexdumps):
+        hexdump_data = packet_hexdumps[line_number - 1]
+        show_hexdump(hexdump_data)
+    else:
+        print("No packet found for this line")
+    
+    
+def show_hexdump(hexdump_data):
+    hexdump_window = tk.Toplevel(window)
+    hexdump_window.title("Packet hexdump")
+    
+    hexdump_text = tk.Text(hexdump_window, height = 20 , width = 60, font = ("Courier", 10), wrap = "none")
+    hexdump_text.insert(tk.END, hexdump_data)
+    hexdump_text.pack()
+    
+    scrollbar = tk.Scrollbar(hexdump_window, command=hexdump_text.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    hexdump_text.config(yscrollcommand=scrollbar.set)
+    
+    
 # GUI
 
 # Main window
@@ -122,6 +150,9 @@ scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
 # Configure the text widget to work with the scrollbar
 output_text.config(yscrollcommand=scrollbar.set)
+
+#clicking the line
+output_text.bind("<Button-1>", on_click)
 
 # Configure grid row and column weights to make sure they expand
 window.grid_rowconfigure(2, weight=1)
