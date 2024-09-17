@@ -1,6 +1,7 @@
 from scapy.all import sniff, hexdump
 from scapy.layers.inet import IP, TCP, UDP, ICMP 
 import tkinter as tk
+from tkinter import ttk
 from threading import Thread
 
 action = None
@@ -10,6 +11,12 @@ packet_hexdumps = []
 def sniffing_action():
     global action
     action = 'sniffing'
+    update_status("Sniffing started...")
+
+def stop_sniffing_action():
+    global action
+    action = None
+    update_status("Sniffing stopped.")
 
 def interface_function():
     interface_dropbox_choice = choose_interface.get()
@@ -21,8 +28,8 @@ def interface_function():
             thread = Thread(target=start_sniffing, args=(interface_dropbox_choice,))
             thread.start()
     else:
-        output_text.insert(tk.END, "Please select an action.\n")
-
+        update_status("Please select an action.")
+    
 def packet_callback(packet):
     global packet_number
     
@@ -31,28 +38,25 @@ def packet_callback(packet):
         ip_dst = packet[IP].dst
         packet_number += 1
         
-        if TCP in packet:
+        if TCP in packet and tcp_var.get():
             proto = "TCP"
             sport = packet[TCP].sport
             dport = packet[TCP].dport
-        elif UDP in packet:
+        elif UDP in packet and udp_var.get():
             proto = "UDP"
             sport = packet[UDP].sport
             dport = packet[UDP].dport 
-        elif ICMP in packet:
+        elif ICMP in packet and icmp_var.get():
             proto = "ICMP"
             sport = packet[ICMP].sport
             dport = packet[ICMP].dport 
         else:
-            proto = "Other"
-            sport = None
-            dport = None 
+            return
             
         packet_info = f"#{packet_number}. Protocol: {proto} | Source: {ip_src}:{sport} -> Destination: {ip_dst}:{dport}\n"
         output_text.insert(tk.END, packet_info)
         output_text.yview(tk.END)
-        
-        # hexdump(packet)
+
         packet_hexdump = hexdump(packet, dump=True)
         packet_hexdumps.append(packet_hexdump)
 
@@ -61,7 +65,7 @@ def start_sniffing(interface=None):
 
 def on_click(event):
     index = output_text.index(f"@{event.x},{event.y}")
-    line_number = int(index.split('.')[0])  # Extract the line number and convert to int
+    line_number = int(index.split('.')[0]) 
 
     if line_number <=len(packet_hexdumps):
         hexdump_data = packet_hexdumps[line_number - 1]
@@ -72,93 +76,111 @@ def on_click(event):
     
 def show_hexdump(hexdump_data):
     hexdump_window = tk.Toplevel(window)
-    hexdump_window.title("Packet hexdump")
-    
-    hexdump_text = tk.Text(hexdump_window, height = 20 , width = 60, font = ("Courier", 10), wrap = "none")
+    hexdump_window.title("Packet Hexdump")
+    hexdump_window.geometry("500x300")
+
+    hexdump_text = tk.Text(hexdump_window, height=20, font=("Courier", 10), wrap="none")
     hexdump_text.insert(tk.END, hexdump_data)
-    hexdump_text.pack()
+    hexdump_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     
     scrollbar = tk.Scrollbar(hexdump_window, command=hexdump_text.yview)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     hexdump_text.config(yscrollcommand=scrollbar.set)
     
-    
-# GUI
+def update_status(message):
+    status_var.set(message)
 
-# Main window
+def quit_program():
+    window.quit()
+
+# GUI Setup
+
 window = tk.Tk()
 window.title("Python Packet Sniffer")
-window.geometry("700x800")
-window.configure(bg="blue")
+window.geometry("800x600")
 
-# Left corner action options 
-option_frame = tk.Frame(window, bg="blue")
-option_frame.grid(row=0, column=0, columnspan=3, pady=10, padx=10, sticky="w")
+# Style
+style = ttk.Style()
+style.theme_use('clam')
 
-options = ["Save", "Open", "Quit", "HexDump"]
+# Menu Bar
+menu_bar = tk.Menu(window)
 
-choose_option = tk.StringVar()
-choose_option.set("Options")
-option_choice_box = tk.OptionMenu(option_frame, choose_option, *options)
-option_choice_box.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+file_menu = tk.Menu(menu_bar, tearoff=0)
+file_menu.add_command(label="Save", command=lambda: update_status("Save option selected."))
+file_menu.add_command(label="Open", command=lambda: update_status("Open option selected."))
+file_menu.add_separator()
+file_menu.add_command(label="Quit", command=quit_program)
+menu_bar.add_cascade(label="File", menu=file_menu)
 
-# Buttons at the top-left
-sniffing = tk.Button(window, text="Sniff", command=sniffing_action, font=("Arial", 12), bg="red", fg="blue")
-sniffing.grid(row=0, column=0, padx=120, pady=10, sticky="w")
+edit_menu = tk.Menu(menu_bar, tearoff=0)
+edit_menu.add_command(label="Find packet", command=lambda: update_status("Find packet option selected."))
+edit_menu.add_command(label="Find next", command=lambda: update_status("Find next option selected."))
+edit_menu.add_command(label="Find previous", command=lambda: update_status("Find previous option selected."))
+menu_bar.add_cascade(label="Edit", menu=edit_menu)
 
-opt1 = tk.Button(window, text="Opt1", command=None, font=("Arial", 12), bg="red", fg="blue")
-opt1.grid(row=0, column=0, padx=190, pady=10, sticky="w")
+filter_menu = tk.Menu(menu_bar, tearoff=0)
+tcp_var = tk.BooleanVar(value=True)
+udp_var = tk.BooleanVar(value=True)
+icmp_var = tk.BooleanVar(value=True)
 
-opt2 = tk.Button(window, text="Opt2", command=None, font=("Arial", 12), bg="red", fg="blue")
-opt2.grid(row=0, column=0, padx=260, pady=10, sticky="w")
+filter_menu.add_checkbutton(label="TCP", variable=tcp_var, 
+                            command=lambda: update_status("TCP filter " + ("enabled" if tcp_var.get() else "disabled")))
+filter_menu.add_checkbutton(label="UDP", variable=udp_var, 
+                            command=lambda: update_status("UDP filter " + ("enabled" if udp_var.get() else "disabled")))
+filter_menu.add_checkbutton(label="ICMP", variable=icmp_var, 
+                            command=lambda: update_status("ICMP filter " + ("enabled" if icmp_var.get() else "disabled")))
+menu_bar.add_cascade(label="Filter", menu=filter_menu)
 
-# Frame for label, dropdown menu, and button
-frame = tk.Frame(window, bg="blue")
-frame.grid(row=1, column=0, columnspan=3, pady=10, sticky="nsew")
+window.config(menu=menu_bar)
 
-# Center the content in the frame
-frame.grid_rowconfigure(0, weight=1)
-frame.grid_columnconfigure(0, weight=1)
-frame.grid_columnconfigure(1, weight=1)
+# Interface frame
+frame = ttk.Frame(window, padding=(20, 10))
+frame.grid(row=0, column=0, columnspan=3, sticky="ew", padx=10, pady=10)
 
-# Interface label and dropdown menu
-interface_label = tk.Label(frame, text="Choose your interface:", font=("Arial", 18), bg="blue", fg="red")
-interface_label.grid(row=0, column=0, padx=10, pady=10, sticky="e")
+interface_label = ttk.Label(frame, text="Choose your interface:", font=("Arial", 14))
+interface_label.grid(row=0, column=0, padx=10, pady=5, sticky="w")
 
 interfaces = ["eth0", "wlan0", "lo", "any", "bluetooth0"]
-
 choose_interface = tk.StringVar()
-choose_interface.set(interfaces[0])  # Set eth0 as default
-interface_choice_box = tk.OptionMenu(frame, choose_interface, *interfaces)
-interface_choice_box.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+choose_interface.set(interfaces[0])
+interface_choice_box = ttk.OptionMenu(frame, choose_interface, *interfaces)
+interface_choice_box.grid(row=0, column=1, padx=10, pady=5, sticky="w")
 
-# OK button in the middle of the row
-button = tk.Button(window, text="OK", command=interface_function, font=("Arial", 12), bg="red", fg="blue")
-button.grid(row=2, column=0, columnspan=3, pady=10)
+# Control buttons
+button_frame = ttk.Frame(window, padding=(10, 5))
+button_frame.grid(row=1, column=0, columnspan=3, sticky="ew", padx=10, pady=5)
 
-# Frame for Text widget and Scrollbar
-text_frame = tk.Frame(window)
-text_frame.grid(row=3, column=0, columnspan=3, padx=10, pady=10, sticky="nsew")
+start_button = ttk.Button(button_frame, text="Start Sniffing", command=sniffing_action)
+start_button.grid(row=0, column=0, padx=10)
 
-# Scrollable text widget for displaying packets or information
-output_text = tk.Text(text_frame, height=30, font=("Arial", 12), wrap="word")
+stop_button = ttk.Button(button_frame, text="Stop Sniffing", command=stop_sniffing_action)
+stop_button.grid(row=0, column=1, padx=10)
+
+ok_button = ttk.Button(button_frame, text="OK", command=interface_function)
+ok_button.grid(row=0, column=2, padx=10)
+
+# Output frame
+output_frame = ttk.Frame(window, padding=(10, 5))
+output_frame.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
+
+output_text = tk.Text(output_frame, height=20, font=("Arial", 12), wrap="word")
 output_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-# Add a vertical scrollbar to the text widget
-scrollbar = tk.Scrollbar(text_frame, command=output_text.yview)
+scrollbar = tk.Scrollbar(output_frame, command=output_text.yview)
 scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-# Configure the text widget to work with the scrollbar
 output_text.config(yscrollcommand=scrollbar.set)
 
-#clicking the line
 output_text.bind("<Button-1>", on_click)
 
-# Configure grid row and column weights to make sure they expand
+# Status bar
+status_var = tk.StringVar()
+status_var.set("Welcome to Packet Sniffer")
+
+status_bar = ttk.Label(window, textvariable=status_var, relief=tk.SUNKEN, anchor='w')
+status_bar.grid(row=3, column=0, columnspan=3, sticky="ew")
 window.grid_rowconfigure(2, weight=1)
 window.grid_columnconfigure(0, weight=1)
-window.grid_columnconfigure(1, weight=1)
-window.grid_columnconfigure(2, weight=1)
 
 # Event loop
 window.mainloop()
