@@ -1,5 +1,6 @@
 from scapy.all import sniff, hexdump
 from scapy.layers.inet import IP, TCP, UDP, ICMP 
+from scapy.layers.l2 import ARP, Ether
 import tkinter as tk
 from tkinter import ttk
 from threading import Thread
@@ -15,16 +16,17 @@ def sniffing_action():
 
 def stop_sniffing_action():
     global action
-    action = None
+    action = 'stop'
     update_status("Sniffing stopped.")
 
 def interface_function():
     interface_dropbox_choice = choose_interface.get()
     if action:
-        output_text.insert(tk.END, f"Selected interface: {interface_dropbox_choice}\n")
-        output_text.insert(tk.END, f"Action: {action}\n")
+        update_status(f"Selected interface: {interface_dropbox_choice}")
         if action == 'sniffing':
-            output_text.delete(1.0, tk.END)
+            for item in tree.get_children():
+                tree.delete(item)
+                
             thread = Thread(target=start_sniffing, args=(interface_dropbox_choice,))
             thread.start()
     else:
@@ -33,7 +35,19 @@ def interface_function():
 def packet_callback(packet):
     global packet_number
     
-    if IP in packet:
+    if ARP in packet and arp_var.get():
+        proto = "ARP"
+        src_mac = packet[ARP].hwsrc  
+        dst_mac = packet[ARP].hwdst  
+        ip_src = packet[ARP].psrc   
+        ip_dst = packet[ARP].pdst  
+        
+        packet_number += 1
+        packet_time = packet.time
+        packet_length = len(packet)
+        tree.insert("", tk.END, values=(packet_number, packet_time, proto, src_mac, dst_mac, ip_src, ip_dst, packet_length))
+
+    elif IP in packet:
         ip_src = packet[IP].src
         ip_dst = packet[IP].dst
         packet_number += 1
@@ -48,30 +62,28 @@ def packet_callback(packet):
             dport = packet[UDP].dport 
         elif ICMP in packet and icmp_var.get():
             proto = "ICMP"
-            sport = packet[ICMP].sport
-            dport = packet[ICMP].dport 
+            sport = packet[ICMP].sport if hasattr(packet[ICMP], 'sport') else 'N/A'
+            dport = packet[ICMP].dport if hasattr(packet[ICMP], 'dport') else 'N/A'
         else:
             return
-            
-        packet_info = f"#{packet_number}. Protocol: {proto} | Source: {ip_src}:{sport} -> Destination: {ip_dst}:{dport}\n"
-        output_text.insert(tk.END, packet_info)
-        output_text.yview(tk.END)
+        
+        packet_time = packet.time
+        packet_length = len(packet)
+        tree.insert("", tk.END, values=(packet_number, packet_time, proto, ip_src, ip_dst, sport, dport, packet_length))
 
-        packet_hexdump = hexdump(packet, dump=True)
-        packet_hexdumps.append(packet_hexdump)
+    packet_hexdump = hexdump(packet, dump=True)
+    packet_hexdumps.append(packet_hexdump)
 
 def start_sniffing(interface=None):
     sniff(iface=interface, prn=packet_callback, store=False)
 
 def on_click(event):
-    index = output_text.index(f"@{event.x},{event.y}")
-    line_number = int(index.split('.')[0]) 
-
-    if line_number <=len(packet_hexdumps):
-        hexdump_data = packet_hexdumps[line_number - 1]
-        show_hexdump(hexdump_data)
-    else:
-        print("No packet found for this line")
+    selected_item = tree.focus() 
+    if selected_item:
+        item_index = int(tree.item(selected_item)['values'][0])  
+        if item_index <= len(packet_hexdumps):
+            hexdump_data = packet_hexdumps[item_index - 1]
+            show_hexdump(hexdump_data)
     
     
 def show_hexdump(hexdump_data):
@@ -97,7 +109,7 @@ def quit_program():
 
 window = tk.Tk()
 window.title("Python Packet Sniffer")
-window.geometry("800x600")
+window.geometry("1200x600")
 
 # Style
 style = ttk.Style()
@@ -123,6 +135,7 @@ filter_menu = tk.Menu(menu_bar, tearoff=0)
 tcp_var = tk.BooleanVar(value=True)
 udp_var = tk.BooleanVar(value=True)
 icmp_var = tk.BooleanVar(value=True)
+arp_var = tk.BooleanVar(value=True)
 
 filter_menu.add_checkbutton(label="TCP", variable=tcp_var, 
                             command=lambda: update_status("TCP filter " + ("enabled" if tcp_var.get() else "disabled")))
@@ -130,6 +143,8 @@ filter_menu.add_checkbutton(label="UDP", variable=udp_var,
                             command=lambda: update_status("UDP filter " + ("enabled" if udp_var.get() else "disabled")))
 filter_menu.add_checkbutton(label="ICMP", variable=icmp_var, 
                             command=lambda: update_status("ICMP filter " + ("enabled" if icmp_var.get() else "disabled")))
+filter_menu.add_checkbutton(label="ARP", variable=icmp_var, 
+                            command=lambda: update_status("ARP filter " + ("enabled" if arp_var.get() else "disabled")))
 menu_bar.add_cascade(label="Filter", menu=filter_menu)
 
 window.config(menu=menu_bar)
@@ -141,7 +156,7 @@ frame.grid(row=0, column=0, columnspan=3, sticky="ew", padx=10, pady=10)
 interface_label = ttk.Label(frame, text="Choose your interface:", font=("Arial", 14))
 interface_label.grid(row=0, column=0, padx=10, pady=5, sticky="w")
 
-interfaces = ["eth0", "wlan0", "lo", "any", "bluetooth0"]
+interfaces = ["any", "eth0", "wlan0", "lo", "any", "bluetooth0"]
 choose_interface = tk.StringVar()
 choose_interface.set(interfaces[0])
 interface_choice_box = ttk.OptionMenu(frame, choose_interface, *interfaces)
@@ -161,17 +176,37 @@ ok_button = ttk.Button(button_frame, text="OK", command=interface_function)
 ok_button.grid(row=0, column=2, padx=10)
 
 # Output frame
-output_frame = ttk.Frame(window, padding=(10, 5))
-output_frame.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
+columns = ("#", "Time", "Protocol", "Source MAC/IP", "Destination MAC/IP", "Source Port", "Destination Port", "Length")
 
-output_text = tk.Text(output_frame, height=20, font=("Arial", 12), wrap="word")
-output_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+tree_frame = ttk.Frame(window)
+tree_frame.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
 
-scrollbar = tk.Scrollbar(output_frame, command=output_text.yview)
+tree = ttk.Treeview(tree_frame, columns = columns, show = "headings", height=20)
+tree.pack(side=tk.LEFT, fill = tk.BOTH, expand=True)
+
+tree.bind("<Button-1>",on_click)
+
+tree.heading("#", text="#")
+tree.heading("Time", text="Time")
+tree.heading("Protocol", text="Protocol")
+tree.heading("Source MAC/IP", text="Source MAC/IP")
+tree.heading("Destination MAC/IP", text="Destination MAC/IP")
+tree.heading("Source Port", text="Source Port")
+tree.heading("Destination Port", text="Destination Port")
+tree.heading("Length", text="Length")
+
+tree.column("#", width=50)
+tree.column("Time", width=150)
+tree.column("Protocol", width=100)
+tree.column("Source MAC/IP", width=200)
+tree.column("Destination MAC/IP", width=200)
+tree.column("Source Port", width=100)
+tree.column("Destination Port", width=100)
+tree.column("Length", width=80)
+
+scrollbar = tk.Scrollbar(tree_frame, command=tree.yview)
 scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-output_text.config(yscrollcommand=scrollbar.set)
-
-output_text.bind("<Button-1>", on_click)
+tree.config(yscrollcommand=scrollbar.set)
 
 # Status bar
 status_var = tk.StringVar()
