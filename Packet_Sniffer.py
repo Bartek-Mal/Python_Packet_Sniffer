@@ -3,21 +3,25 @@ from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.l2 import ARP
 from scapy.layers.dns import DNS, DNSQR, DNSRR 
 import tkinter as tk
-from tkinter import ttk
-from threading import Thread
+from tkinter import ttk, messagebox
+from threading import Thread, Event
 
 action = None
 packet_number = 0
 packet_hexdumps = []
 packets = []
+stop_sniff_event = Event()
+
 
 def sniffing_action():
-    global action
+    global action, stop_sniff_event
+    stop_sniff_event.clear() 
     action = 'sniffing'
     update_status("Sniffing started...")
 
 def stop_sniffing_action():
-    global action
+    global action, stop_sniff_event
+    stop_sniff_event.set()
     action = 'stop'
     update_status("Sniffing stopped.")
 
@@ -37,6 +41,35 @@ def interface_function():
 def packet_callback(packet):
     global packet_number
 
+    # Get the filter values from the GUI
+    filter_text = filter_entry.get().strip()
+    src_ip_filter, dst_ip_filter, filter_sport, filter_dport = None, None, None, None
+    filter_src_mac, filter_dst_mac = None, None
+
+    # Parse the filter text based on selected filter type
+    if filter_text:
+        if selected_filter.get() == "IP":
+            if '>' in filter_text:
+                parts = filter_text.split('>')
+                src_ip_filter = parts[0].strip() if parts[0] else None
+                dst_ip_filter = parts[1].strip() if parts[1] else None
+            else:
+                src_ip_filter = filter_text
+        elif selected_filter.get() == "Port":
+            if '>' in filter_text:
+                parts = filter_text.split('>')
+                filter_sport = parts[0].strip() if parts[0] else None
+                filter_dport = parts[1].strip() if parts[1] else None
+            else:
+                filter_dport = filter_text
+        elif selected_filter.get() == "MAC":
+            if '>' in filter_text:
+                parts = filter_text.split('>')
+                filter_src_mac = parts[0].strip() if parts[0] else None
+                filter_dst_mac = parts[1].strip() if parts[1] else None
+            else:
+                filter_src_mac = filter_text
+
     if ARP in packet and arp_var.get():
         proto = "ARP"
         src_mac = packet[ARP].hwsrc  
@@ -47,8 +80,11 @@ def packet_callback(packet):
         packet_number += 1
         packet_time = packet.time
         packet_length = len(packet)
-        tree.insert("", tk.END, values=(packet_number, packet_time, proto, src_mac, dst_mac, ip_src, ip_dst, packet_length))
 
+        filter(src_ip_filter, ip_src, dst_ip_filter, ip_dst, filter_sport, None, filter_dport, None, 
+               filter_src_mac, src_mac, filter_dst_mac, dst_mac, 
+               values=(packet_number, packet_time, proto , src_mac, dst_mac, ip_src, ip_dst, packet_length))
+        
     elif IP in packet:
         ip_src = packet[IP].src
         ip_dst = packet[IP].dst
@@ -67,31 +103,45 @@ def packet_callback(packet):
             # transaction_id = dns.id
             questions = [q.qname.decode() for q in dns[DNSQR]] 
             answers = [a.rdata for a in dns[DNSRR]] if dns.ancount > 0 else []
-
-            packet_time = packet.time
-            packet_length = len(packet)
-            tree.insert("", tk.END, values=(packet_number, packet_time, proto, ip_src, ip_dst, questions, answers, packet_length))
+            filter(src_ip_filter, ip_src, dst_ip_filter, ip_dst, filter_sport, questions, filter_dport, answers,
+                filter_src_mac, None, filter_dst_mac, None, 
+                values=(packet_number, packet_time, proto, ip_src, ip_dst, questions, answers, packet_length))
             return 
         elif UDP in packet and udp_var.get():
             proto = "UDP"
             sport = packet[UDP].sport
-            dport = packet[UDP].dport 
+            dport = packet[UDP].dport
         elif ICMP in packet and icmp_var.get():
             proto = "ICMP"
             sport = packet[ICMP].sport if hasattr(packet[ICMP], 'sport') else 'N/A'
             dport = packet[ICMP].dport if hasattr(packet[ICMP], 'dport') else 'N/A'
-        else:
-            return
-        tree.insert("", tk.END, values=(packet_number, packet_time, proto, ip_src, ip_dst, sport, dport, packet_length))
-
-    
+        filter(src_ip_filter, ip_src, dst_ip_filter, ip_dst, filter_sport, sport, filter_dport, dport,
+                filter_src_mac, None, filter_dst_mac, None, 
+                values=(packet_number, packet_time, proto, ip_src, ip_dst, sport, dport, packet_length))
     packets.append(packet)
     packet_hexdump = hexdump(packet, dump=True)
     packet_hexdumps.append(packet_hexdump)
-    
+
     
 def start_sniffing(interface=None):
-    sniff(iface=interface, prn=packet_callback, store=False)
+    sniff(iface=interface, prn=packet_callback, store=False, stop_filter=lambda p: stop_sniff_event.is_set())
+
+def filter(src_ip_filter, ip_src, dst_ip_filter, ip_dst, filter_sport, sport, filter_dport, dport, filter_src_mac, src_mac, filter_dst_mac, dst_mac, values):
+    src_ip_condition = (not src_ip_filter or ip_src == src_ip_filter)
+    
+    dst_ip_condition = (not dst_ip_filter or ip_dst == dst_ip_filter)
+    
+    sport_condition = (not filter_sport or sport == filter_sport)
+    
+    dport_condition = (not filter_dport or dport == filter_dport)
+    
+    src_mac_condition = (not filter_src_mac or src_mac == filter_src_mac)
+    
+    dst_mac_condition = (not filter_dst_mac or dst_mac == filter_dst_mac)
+
+    if src_ip_condition and dst_ip_condition and sport_condition and dport_condition and src_mac_condition and dst_mac_condition:
+        tree.insert("", tk.END, values=values)
+
 
 def on_click(event):
     selected_item = tree.focus()
@@ -104,7 +154,6 @@ def on_click(event):
             show_packet_info(packet_show_data, hexdump_data)
 
 
-    
 def show_packet_info(packet_show_data, hexdump_data):
     packet_window = tk.Toplevel(window)
     packet_window.title("Packet Details and Hexdump")
@@ -134,7 +183,47 @@ def show_packet_info(packet_show_data, hexdump_data):
     scrollbar2.pack(side=tk.RIGHT, fill=tk.Y)
     hexdump_text.config(yscrollcommand=scrollbar2.set)
 
+def import_from_hexdump():
+    import_from_hexdump_window = tk.Toplevel(window)
+    import_from_hexdump_window.title("Import from hexdump...")
+    import_from_hexdump_window.geometry("800x600")
     
+    hexdump_insert_label = tk.Label(import_from_hexdump_window, text="Hexdump:")
+    hexdump_insert_label.pack()
+    
+    import_from_hexdump_text = tk.Text(import_from_hexdump_window, height=15, font=("Courier", 10), wrap="none")
+    import_from_hexdump_text.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+    scrollbar = tk.Scrollbar(import_from_hexdump_window, command=import_from_hexdump_text.yview)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    import_from_hexdump_text.config(yscrollcommand=scrollbar.set)
+    
+    button = ttk.Button(import_from_hexdump_window, text="Process Hexdump", command=lambda: hexdump_interpreter(import_from_hexdump_text.get("1.0", tk.END), packet_info_from_hex_text))
+    button.pack(pady=10) 
+    
+    packet_info_from_hex = tk.Label(import_from_hexdump_window, text="Packet info:")
+    packet_info_from_hex.pack()
+
+    packet_info_from_hex_text = tk.Text(import_from_hexdump_window, height=15, font=("Courier", 10), wrap="none")
+    
+    packet_info_from_hex_text.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+    scrollbar2 = tk.Scrollbar(import_from_hexdump_window, command=packet_info_from_hex_text.yview)
+    scrollbar2.pack(side=tk.RIGHT, fill=tk.Y)
+    packet_info_from_hex_text.config(yscrollcommand=scrollbar.set)
+
+def hexdump_interpreter(hexdump_input, packet_info):
+    hexdump_input = hexdump_input.strip() 
+
+    if hexdump_input in packet_hexdumps:
+        hexdump_index = packet_hexdumps.index(hexdump_input)
+        if hexdump_index < len(packets):
+            packet = packets[hexdump_index]
+            packet_show_data = packet.show(dump=True)
+            packet_info.insert(tk.END, packet_show_data)
+        else:
+            messagebox.showerror("Error", "Hexdump out of bounds!")
+    else:
+        messagebox.showerror("Error", "Hexdump not found!")
+        
 def update_status(message):
     status_var.set(message)
 
@@ -157,7 +246,7 @@ menu_bar = tk.Menu(window)
 file_menu = tk.Menu(menu_bar, tearoff=0)
 file_menu.add_command(label="Save", command=lambda: update_status("Save option selected."))
 file_menu.add_command(label="Open", command=lambda: update_status("Open option selected."))
-file_menu.add_separator()
+file_menu.add_command(label="Import from hexdump", command=lambda : import_from_hexdump())
 file_menu.add_command(label="Quit", command=quit_program)
 menu_bar.add_cascade(label="File", menu=file_menu)
 
@@ -192,14 +281,30 @@ window.config(menu=menu_bar)
 frame = ttk.Frame(window, padding=(20, 10))
 frame.grid(row=0, column=0, columnspan=3, sticky="ew", padx=10, pady=10)
 
-interface_label = ttk.Label(frame, text="Choose your interface:", font=("Arial", 14))
-interface_label.grid(row=0, column=0, padx=10, pady=5, sticky="w")
+# Filter
+filter_label = ttk.Label(frame, text="Filter:", font=("Arial", 14))
+filter_label.grid(row=0, column=0, padx=10, pady=5, sticky="e")
 
-interfaces = ["any", "eth0", "wlan0", "lo", "any", "bluetooth0"]
+filter_options = ["Filter", "IP", "Port", "MAC"]
+selected_filter = tk.StringVar()
+selected_filter.set(filter_options[0])
+
+filter_choice_box = ttk.OptionMenu(frame, selected_filter, *filter_options)
+filter_choice_box.grid(row=0, column=1, padx=10, pady=5, sticky="w")
+
+filter_entry = ttk.Entry(frame, width=20)
+filter_entry.grid(row=0, column=2, padx=10, pady=5, sticky="w")
+
+# Choose your interface 
+interface_label = ttk.Label(frame, text="Choose your interface:", font=("Arial", 14))
+interface_label.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+
+interfaces = ["any", "any", "eth0", "wlan0", "lo", "bluetooth0"]
 choose_interface = tk.StringVar()
 choose_interface.set(interfaces[0])
 interface_choice_box = ttk.OptionMenu(frame, choose_interface, *interfaces)
-interface_choice_box.grid(row=0, column=1, padx=10, pady=5, sticky="w")
+interface_choice_box.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+
 
 # Control buttons
 button_frame = ttk.Frame(window, padding=(10, 5))
