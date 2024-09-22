@@ -73,7 +73,7 @@ def packet_callback(packet):
     if ARP in packet and arp_var.get():
         proto = "ARP"
         src_mac = packet[ARP].hwsrc  
-        dst_mac = packet[ARP].hwdst  
+        dst_mac = packet[ARP].hwdst if hasattr(packet[ARP], 'hwdst') else 'N/A' 
         ip_src = packet[ARP].psrc   
         ip_dst = packet[ARP].pdst  
         
@@ -118,6 +118,13 @@ def packet_callback(packet):
         filter(src_ip_filter, ip_src, dst_ip_filter, ip_dst, filter_sport, sport, filter_dport, dport,
                 filter_src_mac, None, filter_dst_mac, None, 
                 values=(packet_number, packet_time, proto, ip_src, ip_dst, sport, dport, packet_length))
+        
+    tree.tag_configure('tcp', background='#FFCCCC')  
+    tree.tag_configure('udp', background='#CCFFCC')  
+    tree.tag_configure('icmp', background='#CCCCFF')  
+    tree.tag_configure('dns', background='#FFFFCC')  
+    tree.tag_configure('arp', background='#FFCCFF')  
+    tree.tag_configure('default', background='#FFFFFF')  
     packets.append(packet)
     packet_hexdump = hexdump(packet, dump=True)
     packet_hexdumps.append(packet_hexdump)
@@ -140,7 +147,17 @@ def filter(src_ip_filter, ip_src, dst_ip_filter, ip_dst, filter_sport, sport, fi
     dst_mac_condition = (not filter_dst_mac or dst_mac == filter_dst_mac)
 
     if src_ip_condition and dst_ip_condition and sport_condition and dport_condition and src_mac_condition and dst_mac_condition:
-        tree.insert("", tk.END, values=values)
+        proto = values[2]
+        if proto == "TCP" and tcp_var.get():
+            tree.insert("", tk.END, values=values, tags=('tcp',))
+        elif proto == "UDP" and udp_var.get():
+            tree.insert("", tk.END, values=values, tags=('udp',))
+        elif proto == "ICMP" and icmp_var.get():
+            tree.insert("", tk.END, values=values, tags=('icmp',))
+        elif proto == "ARP" and arp_var.get():
+            tree.insert("", tk.END, values=values, tags=('arp',))
+        elif proto == "DNS" and dns_var.get():
+            tree.insert("", tk.END, values=values, tags=('dns',))
 
 
 def on_click(event):
