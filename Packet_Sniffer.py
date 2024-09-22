@@ -9,6 +9,7 @@ from threading import Thread
 action = None
 packet_number = 0
 packet_hexdumps = []
+packets = []
 
 def sniffing_action():
     global action
@@ -51,8 +52,10 @@ def packet_callback(packet):
     elif IP in packet:
         ip_src = packet[IP].src
         ip_dst = packet[IP].dst
-        packet_number += 1
         
+        packet_number += 1
+        packet_time = packet.time
+        packet_length = len(packet)
 
         if TCP in packet and tcp_var.get():
             proto = "TCP"
@@ -79,38 +82,58 @@ def packet_callback(packet):
             dport = packet[ICMP].dport if hasattr(packet[ICMP], 'dport') else 'N/A'
         else:
             return
-        
-        packet_time = packet.time
-        packet_length = len(packet)
         tree.insert("", tk.END, values=(packet_number, packet_time, proto, ip_src, ip_dst, sport, dport, packet_length))
 
+    
+    packets.append(packet)
     packet_hexdump = hexdump(packet, dump=True)
     packet_hexdumps.append(packet_hexdump)
-
+    
+    
 def start_sniffing(interface=None):
     sniff(iface=interface, prn=packet_callback, store=False)
 
 def on_click(event):
-    selected_item = tree.focus() 
+    selected_item = tree.focus()
     if selected_item:
-        item_index = int(tree.item(selected_item)['values'][0])  
-        if item_index <= len(packet_hexdumps):
+        item_index = int(tree.item(selected_item)['values'][0])
+        if item_index <= len(packets): 
+            packet = packets[item_index - 1]
+            packet_show_data = packet.show(dump=True)
             hexdump_data = packet_hexdumps[item_index - 1]
-            show_hexdump(hexdump_data)
-    
-    
-def show_hexdump(hexdump_data):
-    hexdump_window = tk.Toplevel(window)
-    hexdump_window.title("Packet Hexdump")
-    hexdump_window.geometry("500x300")
+            show_packet_info(packet_show_data, hexdump_data)
 
-    hexdump_text = tk.Text(hexdump_window, height=20, font=("Courier", 10), wrap="none")
-    hexdump_text.insert(tk.END, hexdump_data)
-    hexdump_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
     
-    scrollbar = tk.Scrollbar(hexdump_window, command=hexdump_text.yview)
+def show_packet_info(packet_show_data, hexdump_data):
+    packet_window = tk.Toplevel(window)
+    packet_window.title("Packet Details and Hexdump")
+    packet_window.geometry("800x600")
+
+    # Packet infos
+    packet_show_label = tk.Label(packet_window, text="Packet Details:")
+    packet_show_label.pack()
+
+    packet_show_text = tk.Text(packet_window, height=15, font=("Courier", 10), wrap="none")
+    packet_show_text.insert(tk.END, packet_show_data)
+    packet_show_text.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    # Hexdump
+    hexdump_label = tk.Label(packet_window, text="Packet Hexdump:")
+    hexdump_label.pack()
+
+    hexdump_text = tk.Text(packet_window, height=15, font=("Courier", 10), wrap="none")
+    hexdump_text.insert(tk.END, hexdump_data)
+    hexdump_text.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    scrollbar = tk.Scrollbar(packet_window, command=packet_show_text.yview)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    hexdump_text.config(yscrollcommand=scrollbar.set)
+    packet_show_text.config(yscrollcommand=scrollbar.set)
+
+    scrollbar2 = tk.Scrollbar(packet_window, command=hexdump_text.yview)
+    scrollbar2.pack(side=tk.RIGHT, fill=tk.Y)
+    hexdump_text.config(yscrollcommand=scrollbar2.set)
+
     
 def update_status(message):
     status_var.set(message)
