@@ -1,6 +1,7 @@
 from scapy.all import sniff, hexdump
 from scapy.layers.inet import IP, TCP, UDP, ICMP 
-from scapy.layers.l2 import ARP, Ether
+from scapy.layers.l2 import ARP
+from scapy.layers.dns import DNS, DNSQR, DNSRR 
 import tkinter as tk
 from tkinter import ttk
 from threading import Thread
@@ -34,7 +35,7 @@ def interface_function():
     
 def packet_callback(packet):
     global packet_number
-    
+
     if ARP in packet and arp_var.get():
         proto = "ARP"
         src_mac = packet[ARP].hwsrc  
@@ -52,10 +53,22 @@ def packet_callback(packet):
         ip_dst = packet[IP].dst
         packet_number += 1
         
+
         if TCP in packet and tcp_var.get():
             proto = "TCP"
             sport = packet[TCP].sport
             dport = packet[TCP].dport
+        elif UDP in packet and DNS in packet and dns_var.get() and udp_var.get():
+            proto = "DNS"
+            dns = packet[DNS]
+            # transaction_id = dns.id
+            questions = [q.qname.decode() for q in dns[DNSQR]] 
+            answers = [a.rdata for a in dns[DNSRR]] if dns.ancount > 0 else []
+
+            packet_time = packet.time
+            packet_length = len(packet)
+            tree.insert("", tk.END, values=(packet_number, packet_time, proto, ip_src, ip_dst, questions, answers, packet_length))
+            return 
         elif UDP in packet and udp_var.get():
             proto = "UDP"
             sport = packet[UDP].sport
@@ -136,6 +149,7 @@ tcp_var = tk.BooleanVar(value=True)
 udp_var = tk.BooleanVar(value=True)
 icmp_var = tk.BooleanVar(value=True)
 arp_var = tk.BooleanVar(value=True)
+dns_var = tk.BooleanVar(value=True)
 
 filter_menu.add_checkbutton(label="TCP", variable=tcp_var, 
                             command=lambda: update_status("TCP filter " + ("enabled" if tcp_var.get() else "disabled")))
@@ -143,8 +157,10 @@ filter_menu.add_checkbutton(label="UDP", variable=udp_var,
                             command=lambda: update_status("UDP filter " + ("enabled" if udp_var.get() else "disabled")))
 filter_menu.add_checkbutton(label="ICMP", variable=icmp_var, 
                             command=lambda: update_status("ICMP filter " + ("enabled" if icmp_var.get() else "disabled")))
-filter_menu.add_checkbutton(label="ARP", variable=icmp_var, 
+filter_menu.add_checkbutton(label="ARP", variable=arp_var, 
                             command=lambda: update_status("ARP filter " + ("enabled" if arp_var.get() else "disabled")))
+filter_menu.add_checkbutton(label="DNS", variable=dns_var, 
+                            command=lambda: update_status("DNS filter " + ("enabled" if dns_var.get() else "disabled")))
 menu_bar.add_cascade(label="Filter", menu=filter_menu)
 
 window.config(menu=menu_bar)
