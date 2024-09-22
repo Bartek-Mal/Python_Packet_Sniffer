@@ -41,12 +41,12 @@ def interface_function():
 def packet_callback(packet):
     global packet_number
 
-    # Get the filter values from the GUI
     filter_text = filter_entry.get().strip()
     src_ip_filter, dst_ip_filter, filter_sport, filter_dport = None, None, None, None
     filter_src_mac, filter_dst_mac = None, None
+    sport, dport = None, None
+    proto = "Unknown"
 
-    # Parse the filter text based on selected filter type
     if filter_text:
         if selected_filter.get() == "IP":
             if '>' in filter_text:
