@@ -1,5 +1,6 @@
 from scapy.all import sniff, hexdump
 from scapy.layers.inet import IP, TCP, UDP, ICMP 
+from scapy.layers.inet6 import IPv6
 from scapy.layers.l2 import ARP
 from scapy.layers.dns import DNS, DNSQR, DNSRR 
 import tkinter as tk
@@ -11,7 +12,6 @@ packet_number = 0
 packet_hexdumps = []
 packets = []
 stop_sniff_event = Event()
-
 
 def sniffing_action():
     global action, stop_sniff_event
@@ -32,12 +32,12 @@ def interface_function():
         if action == 'sniffing':
             for item in tree.get_children():
                 tree.delete(item)
-                
+
             thread = Thread(target=start_sniffing, args=(interface_dropbox_choice,))
             thread.start()
     else:
         update_status("Please select an action.")
-    
+
 def packet_callback(packet):
     global packet_number
 
@@ -56,7 +56,7 @@ def packet_callback(packet):
             else:
                 src_ip_filter = filter_text
         elif selected_filter.get() == "Port":
-            if '>' in filter_text:
+            if '>' in filter_text:  
                 parts = filter_text.split('>')
                 filter_sport = parts[0].strip() if parts[0] else None
                 filter_dport = parts[1].strip() if parts[1] else None
@@ -93,10 +93,12 @@ def packet_callback(packet):
         packet_time = packet.time
         packet_length = len(packet)
 
-        if TCP in packet and tcp_var.get():
-            proto = "TCP"
+        if TCP in packet and tcp_var.get():  
+            port_protocol_map = {80: "HTTP", 443: "HTTPS", 445: "SMB", 23: "Telnet", 21: "FTP"}
+            proto = port_protocol_map.get(packet[TCP].dport, port_protocol_map.get(packet[TCP].sport, "TCP"))
             sport = packet[TCP].sport
             dport = packet[TCP].dport
+
         elif UDP in packet and DNS in packet and dns_var.get() and udp_var.get():
             proto = "DNS"
             dns = packet[DNS]
@@ -148,17 +150,17 @@ def filter(src_ip_filter, ip_src, dst_ip_filter, ip_dst, filter_sport, sport, fi
 
     if src_ip_condition and dst_ip_condition and sport_condition and dport_condition and src_mac_condition and dst_mac_condition:
         proto = values[2]
-        if proto == "TCP" and tcp_var.get():
-            tree.insert("", tk.END, values=values, tags=('tcp',))
+        
+        if proto == "DNS" and dns_var.get():
+            tree.insert("", tk.END, values=values, tags=('dns',))
         elif proto == "UDP" and udp_var.get():
             tree.insert("", tk.END, values=values, tags=('udp',))
         elif proto == "ICMP" and icmp_var.get():
             tree.insert("", tk.END, values=values, tags=('icmp',))
         elif proto == "ARP" and arp_var.get():
             tree.insert("", tk.END, values=values, tags=('arp',))
-        elif proto == "DNS" and dns_var.get():
-            tree.insert("", tk.END, values=values, tags=('dns',))
-
+        elif (proto == "TCP" or proto == "HTTP" or "HTTPS" or proto == "SMB" or proto == "Telnet" or proto == "FTP" or proto == "test" )and tcp_var.get():
+            tree.insert("", tk.END, values=values, tags=('tcp',))
 
 def on_click(event):
     selected_item = tree.focus()
@@ -248,7 +250,6 @@ def quit_program():
     window.quit()
 
 # GUI Setup
-
 window = tk.Tk()
 window.title("Python Packet Sniffer")
 window.geometry("1200x600")
