@@ -5,9 +5,10 @@ from sniffer import start_sniffing
 from packet_processing import packet_callback
 from hexdump_utils import show_packet_info, import_from_hexdump
 from scapy.layers.inet import IP, TCP, UDP, ICMP
-from scapy.layers.l2 import ARP
+from scapy.layers.l2 import ARP, Ether, GRE
 from scapy.layers.dns import DNS, DNSQR, DNSRR
 from scapy.utils import hexdump
+from info import info
 import queue
 
 class PacketSnifferApp:
@@ -25,96 +26,112 @@ class PacketSnifferApp:
     def setup_gui(self):
         self.window.title("Python Packet Sniffer")
         self.window.geometry("1200x600")
-        # Style
+        
         style = ttk.Style()
         style.theme_use('clam')
+        
+        # Initialize protocol filter variables
+        # Application Layer Protocols
+        self.http_var = tk.BooleanVar(value=True)
+        self.https_var = tk.BooleanVar(value=True)
+        self.dns_var = tk.BooleanVar(value=True)
+        self.ftp_var = tk.BooleanVar(value=True)
+        self.telnet_var = tk.BooleanVar(value=True)
+        self.smtp_var = tk.BooleanVar(value=True)
+        self.pop3_var = tk.BooleanVar(value=False)
+        self.imap_var = tk.BooleanVar(value=False)
+        self.smb_var = tk.BooleanVar(value=False)
+        self.ntp_var = tk.BooleanVar(value=False)
+        self.ssh_var = tk.BooleanVar(value=False)
+        self.rdp_var = tk.BooleanVar(value=False)
 
-        # Initialize filter variables
+        # Transport Layer Protocols
         self.tcp_var = tk.BooleanVar(value=True)
         self.udp_var = tk.BooleanVar(value=True)
+
+        # Network Layer Protocols
         self.icmp_var = tk.BooleanVar(value=True)
         self.arp_var = tk.BooleanVar(value=True)
-        self.dns_var = tk.BooleanVar(value=True)
+        self.gre_var = tk.BooleanVar(value=False)
+
+        # Data Link Layer Protocols
+        self.ether_var = tk.BooleanVar(value=False)
+        self.ppp_var = tk.BooleanVar(value=False)
+        self.stp_var = tk.BooleanVar(value=False)
+        self.lldp_var = tk.BooleanVar(value=False)
 
         self.selected_filter = tk.StringVar()
         self.filter_entry = ttk.Entry(width=20)
-
-        # Status variable
+        
         self.status_var = tk.StringVar()
         self.status_var.set("Welcome to Packet Sniffer")
-
+        
         # Menu Bar
         menu_bar = tk.Menu(self.window)
-
+        
         # File Menu
         file_menu = tk.Menu(menu_bar, tearoff=0)
-        file_menu.add_command(
-            label="Save",
-            command=lambda: self.update_status("Save option selected.")
-        )
-        file_menu.add_command(
-            label="Open",
-            command=lambda: self.update_status("Open option selected.")
-        )
-        file_menu.add_command(
-            label="Import from hexdump",
-            command=lambda: import_from_hexdump(self)
-        )
+        file_menu.add_command(label="Save", command=lambda: self.save())
+        file_menu.add_command(label="Open", command=lambda: self.update_status("Open option selected."))
+        file_menu.add_command(label="Import from hexdump", command=lambda: import_from_hexdump(self))
         file_menu.add_command(label="Quit", command=self.quit_program)
         menu_bar.add_cascade(label="File", menu=file_menu)
-
+        
         # Edit Menu
         edit_menu = tk.Menu(menu_bar, tearoff=0)
-        edit_menu.add_command(
-            label="Find packet",
-            command=lambda: self.update_status("Find packet option selected.")
-        )
-        edit_menu.add_command(
-            label="Find next",
-            command=lambda: self.update_status("Find next option selected.")
-        )
-        edit_menu.add_command(
-            label="Find previous",
-            command=lambda: self.update_status("Find previous option selected.")
-        )
+        edit_menu.add_command(label="Find packet", command=lambda: self.update_status("Find packet option selected."))
+        edit_menu.add_command(label="Find next", command=lambda: self.update_status("Find next option selected."))
+        edit_menu.add_command(label="Find previous", command=lambda: self.update_status("Find previous option selected."))
         menu_bar.add_cascade(label="Edit", menu=edit_menu)
-
-        # Filter Menu
+        
+        # Filter Menu with Protocol Grouping
         filter_menu = tk.Menu(menu_bar, tearoff=0)
-        filter_menu.add_checkbutton(
-            label="TCP", variable=self.tcp_var,
-            command=lambda: self.update_status(
-                "TCP filter " + ("enabled" if self.tcp_var.get() else "disabled")
-            )
-        )
-        filter_menu.add_checkbutton(
-            label="UDP", variable=self.udp_var,
-            command=lambda: self.update_status(
-                "UDP filter " + ("enabled" if self.udp_var.get() else "disabled")
-            )
-        )
-        filter_menu.add_checkbutton(
-            label="ICMP", variable=self.icmp_var,
-            command=lambda: self.update_status(
-                "ICMP filter " + ("enabled" if self.icmp_var.get() else "disabled")
-            )
-        )
-        filter_menu.add_checkbutton(
-            label="ARP", variable=self.arp_var,
-            command=lambda: self.update_status(
-                "ARP filter " + ("enabled" if self.arp_var.get() else "disabled")
-            )
-        )
-        filter_menu.add_checkbutton(
-            label="DNS", variable=self.dns_var,
-            command=lambda: self.update_status(
-                "DNS filter " + ("enabled" if self.dns_var.get() else "disabled")
-            )
-        )
+        
+        # Application Layer Group
+        app_layer_menu = tk.Menu(filter_menu, tearoff=0)
+        app_layer_menu.add_checkbutton(label="HTTP", variable=self.http_var)
+        app_layer_menu.add_checkbutton(label="HTTPS", variable=self.https_var)
+        app_layer_menu.add_checkbutton(label="DNS", variable=self.dns_var)
+        app_layer_menu.add_checkbutton(label="FTP", variable=self.ftp_var)
+        app_layer_menu.add_checkbutton(label="Telnet", variable=self.telnet_var)
+        app_layer_menu.add_checkbutton(label="SMTP", variable=self.smtp_var)
+        app_layer_menu.add_checkbutton(label="POP3", variable=self.pop3_var)
+        app_layer_menu.add_checkbutton(label="IMAP", variable=self.imap_var)
+        app_layer_menu.add_checkbutton(label="SMB", variable=self.smb_var)
+        app_layer_menu.add_checkbutton(label="NTP", variable=self.ntp_var)
+        app_layer_menu.add_checkbutton(label="SSH", variable=self.ssh_var)
+        app_layer_menu.add_checkbutton(label="RDP", variable=self.rdp_var)
+        filter_menu.add_cascade(label="Application Layer", menu=app_layer_menu)
+        
+        # Transport Layer Group
+        transport_layer_menu = tk.Menu(filter_menu, tearoff=0)
+        transport_layer_menu.add_checkbutton(label="TCP", variable=self.tcp_var)
+        transport_layer_menu.add_checkbutton(label="UDP", variable=self.udp_var)
+        filter_menu.add_cascade(label="Transport Layer", menu=transport_layer_menu)
+        
+        # Network Layer Group
+        network_layer_menu = tk.Menu(filter_menu, tearoff=0)
+        network_layer_menu.add_checkbutton(label="ICMP", variable=self.icmp_var)
+        network_layer_menu.add_checkbutton(label="ARP", variable=self.arp_var)
+        network_layer_menu.add_checkbutton(label="GRE", variable=self.gre_var)
+        filter_menu.add_cascade(label="Network Layer", menu=network_layer_menu)
+
+        # Data Link Layer Group
+        data_link_layer_menu = tk.Menu(filter_menu, tearoff=0)
+        data_link_layer_menu.add_checkbutton(label="Ethernet", variable=self.ether_var)
+        data_link_layer_menu.add_checkbutton(label="PPP", variable=self.ppp_var)
+        data_link_layer_menu.add_checkbutton(label="STP", variable=self.stp_var)
+        data_link_layer_menu.add_checkbutton(label="LLDP", variable=self.lldp_var)
+        filter_menu.add_cascade(label="Data Link Layer", menu=data_link_layer_menu)
+        
         menu_bar.add_cascade(label="Filter", menu=filter_menu)
-
+        
+        # Add INFO button in Menu
+        menu_bar.add_command(label="INFO", command=self.info_display)
+        
+        # Configure menu in main window
         self.window.config(menu=menu_bar)
-
+        
         # Interface frame
         frame = ttk.Frame(self.window, padding=(20, 10))
         frame.grid(row=0, column=0, columnspan=3, sticky="ew", padx=10, pady=10)
@@ -214,7 +231,7 @@ class PacketSnifferApp:
                         lambda pkt: packet_callback(pkt, self)
                     )
                 )
-                thread.daemon = True  
+                thread.daemon = True 
                 thread.start()
         else:
             self.update_status("Please select an action.")
@@ -245,6 +262,7 @@ class PacketSnifferApp:
         sport, dport = None, None
         proto = "Unknown"
 
+        # Parse the filter text input for IP, Port, or MAC-based filtering
         if filter_text:
             if self.selected_filter.get() == "IP":
                 if '>' in filter_text:
@@ -268,6 +286,7 @@ class PacketSnifferApp:
                 else:
                     filter_src_mac = filter_text
 
+        # Detect ARP packets
         if ARP in packet and self.arp_var.get():
             proto = "ARP"
             src_mac = packet[ARP].hwsrc
@@ -285,6 +304,7 @@ class PacketSnifferApp:
                 values=(self.packet_number, packet_time, proto, src_mac, dst_mac, ip_src, ip_dst, packet_length)
             )
 
+        # Detect IP-based packets
         elif IP in packet:
             ip_src = packet[IP].src
             ip_dst = packet[IP].dst
@@ -293,57 +313,102 @@ class PacketSnifferApp:
             packet_time = packet.time
             packet_length = len(packet)
 
-            if TCP in packet and self.tcp_var.get():
-                port_protocol_map = {80: "HTTP", 443: "HTTPS", 445: "SMB", 23: "Telnet", 21: "FTP"}
-                proto = port_protocol_map.get(packet[TCP].dport, port_protocol_map.get(packet[TCP].sport, "TCP"))
+            # TCP and its associated protocols
+            if TCP in packet:
                 sport = packet[TCP].sport
                 dport = packet[TCP].dport
+                protocol_map = {
+                    80: "HTTP", 443: "HTTPS", 21: "FTP", 23: "Telnet",
+                    25: "SMTP", 110: "POP3", 143: "IMAP", 22: "SSH",
+                    3389: "RDP", 445: "SMB", 1194: "OpenVPN", 500: "ISAKMP"
+                }
+                proto = protocol_map.get(dport, protocol_map.get(sport, "TCP"))
 
-            elif UDP in packet and DNS in packet and self.dns_var.get() and self.udp_var.get():
-                proto = "DNS"
-                dns = packet[DNS]
-
-                if DNSQR in dns:
-                    questions = [q.qname.decode() for q in dns[DNSQR]]
-                else:
-                    questions = []
-
-                if dns.ancount > 0 and DNSRR in dns:
-                    answers = [a.rdata for a in dns[DNSRR]]
-                else:
-                    answers = []
-
-                self.filter_packet(
-                    src_ip_filter, ip_src, dst_ip_filter, ip_dst, filter_sport, questions, filter_dport, answers,
-                    filter_src_mac, None, filter_dst_mac, None,
-                    values=(self.packet_number, packet_time, proto, ip_src, ip_dst, questions, answers, packet_length)
-                )
-                return
-
-            elif UDP in packet and self.udp_var.get():
-                proto = "UDP"
+            # UDP and DNS/NTP-specific handling
+            elif UDP in packet:
                 sport = packet[UDP].sport
                 dport = packet[UDP].dport
+                protocol_map = {
+                    53: "DNS", 123: "NTP", 161: "SNMP", 500: "ISAKMP",
+                    67: "DHCP", 68: "DHCP"
+                }
+                
+                if DNS in packet and self.dns_var.get():
+                    proto = "DNS"
+                    dns = packet[DNS]
+                    
+                    # Extract DNS questions and answers
+                    questions = [q.qname.decode() for q in dns[DNSQR]] if DNSQR in dns else []
+                    answers = [a.rdata for a in dns[DNSRR]] if dns.ancount > 0 and DNSRR in dns else []
+
+                    self.filter_packet(
+                        src_ip_filter, ip_src, dst_ip_filter, ip_dst, filter_sport, questions, filter_dport, answers,
+                        filter_src_mac, None, filter_dst_mac, None,
+                        values=(self.packet_number, packet_time, proto, ip_src, ip_dst, questions, answers, packet_length)
+                    )
+                    return  # Exit after processing DNS to prevent further processing
+
+                else:
+                    proto = protocol_map.get(dport, protocol_map.get(sport, "UDP"))
+
+
+            # ICMP detection
             elif ICMP in packet and self.icmp_var.get():
                 proto = "ICMP"
-                sport = packet[ICMP].sport if hasattr(packet[ICMP], 'sport') else 'N/A'
-                dport = packet[ICMP].dport if hasattr(packet[ICMP], 'dport') else 'N/A'
+                sport = getattr(packet[ICMP], 'sport', 'N/A')
+                dport = getattr(packet[ICMP], 'dport', 'N/A')
 
+            # GRE detection
+            elif GRE in packet and self.gre_var.get():
+                proto = "GRE"
+
+            # Apply packet to filter and update GUI
             self.filter_packet(
                 src_ip_filter, ip_src, dst_ip_filter, ip_dst, filter_sport, sport, filter_dport, dport,
                 filter_src_mac, None, filter_dst_mac, None,
                 values=(self.packet_number, packet_time, proto, ip_src, ip_dst, sport, dport, packet_length)
             )
 
+        # Handle Data Link Layer packets directly (Ethernet, PPP, STP, LLDP)
+        elif Ether in packet and self.ether_var.get():
+            proto = "Ethernet"
+            src_mac = packet[Ether].src
+            dst_mac = packet[Ether].dst
+
+            self.filter_packet(
+                None, None, None, None, None, None, None, None,
+                src_mac, src_mac, dst_mac, dst_mac,
+                values=(self.packet_number, packet.time, proto, src_mac, dst_mac, "-", "-", len(packet))
+            )
+
+        # Update packet history and hexdump display
         self.packets.append(packet)
         packet_hexdump = hexdump(packet, dump=True)
         self.packet_hexdumps.append(packet_hexdump)
         
+        # Set color tags for different protocols in GUI
         self.tree.tag_configure('tcp', background='#FFCCCC')
         self.tree.tag_configure('udp', background='#CCFFCC')
         self.tree.tag_configure('icmp', background='#CCCCFF')
         self.tree.tag_configure('dns', background='#FFFFCC')
         self.tree.tag_configure('arp', background='#FFCCFF')
+        self.tree.tag_configure('http', background='#FFFF99')
+        self.tree.tag_configure('https', background='#99FF99')
+        self.tree.tag_configure('ftp', background='#FF99FF')
+        self.tree.tag_configure('ssh', background='#CCCC99')
+        self.tree.tag_configure('rdp', background='#99CCFF')
+        self.tree.tag_configure('smtp', background='#FFCC99')
+        self.tree.tag_configure('pop3', background='#99FF99')
+        self.tree.tag_configure('imap', background='#CC99FF')
+        self.tree.tag_configure('telnet', background='#FF9999')
+        self.tree.tag_configure('smb', background='#FFFF99')
+        self.tree.tag_configure('ntp', background='#FFCC33')
+        self.tree.tag_configure('isakmp', background='#FF6699')
+        self.tree.tag_configure('gre', background='#9999FF')
+        self.tree.tag_configure('ethernet', background='#CCCCCC')
+        self.tree.tag_configure('ppp', background='#CCFF99')
+        self.tree.tag_configure('stp', background='#FF9999')
+        self.tree.tag_configure('lldp', background='#FF99FF')
         self.tree.tag_configure('default', background='#FFFFFF')
 
     def filter_packet(
@@ -351,6 +416,7 @@ class PacketSnifferApp:
         filter_sport, sport, filter_dport, dport,
         filter_src_mac, src_mac, filter_dst_mac, dst_mac, values
     ):
+        # Check each filtering condition
         src_ip_condition = (not src_ip_filter or ip_src == src_ip_filter)
         dst_ip_condition = (not dst_ip_filter or ip_dst == dst_ip_filter)
         sport_condition = (not filter_sport or str(sport) == filter_sport)
@@ -358,10 +424,18 @@ class PacketSnifferApp:
         src_mac_condition = (not filter_src_mac or src_mac == filter_src_mac)
         dst_mac_condition = (not filter_dst_mac or dst_mac == filter_dst_mac)
 
+        # Only add packet to display if it matches all enabled filters
         if src_ip_condition and dst_ip_condition and sport_condition and dport_condition and src_mac_condition and dst_mac_condition:
             proto = values[2]
 
-            if proto == "DNS" and self.dns_var.get():
+            # Assign color tags based on the protocol type
+            if proto == "HTTP" and self.http_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('http',))
+            elif proto == "HTTPS" and self.https_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('https',))
+            elif proto == "FTP" and self.ftp_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('ftp',))
+            elif proto == "DNS" and self.dns_var.get():
                 self.tree.insert("", tk.END, values=values, tags=('dns',))
             elif proto == "UDP" and self.udp_var.get():
                 self.tree.insert("", tk.END, values=values, tags=('udp',))
@@ -369,8 +443,50 @@ class PacketSnifferApp:
                 self.tree.insert("", tk.END, values=values, tags=('icmp',))
             elif proto == "ARP" and self.arp_var.get():
                 self.tree.insert("", tk.END, values=values, tags=('arp',))
-            elif (proto == "TCP" or proto in ["HTTP", "HTTPS", "SMB", "Telnet", "FTP"]) and self.tcp_var.get():
-                self.tree.insert("", tk.END, values=values, tags=('tcp',))
+            elif proto == "SSH" and self.ssh_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('ssh',))
+            elif proto == "RDP" and self.rdp_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('rdp',))
+            elif proto == "SMTP" and self.smtp_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('smtp',))
+            elif proto == "POP3" and self.pop3_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('pop3',))
+            elif proto == "IMAP" and self.imap_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('imap',))
+            elif proto == "Telnet" and self.telnet_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('telnet',))
+            elif proto == "SMB" and self.smb_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('smb',))
+            elif proto == "NTP" and self.ntp_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('ntp',))
+            elif proto == "ISAKMP" and self.isakmp_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('isakmp',))
+            elif proto == "GRE" and self.gre_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('gre',))
+            elif proto == "Ethernet" and self.ether_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('ethernet',))
+            elif proto == "PPP" and self.ppp_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('ppp',))
+            elif proto == "STP" and self.stp_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('stp',))
+            elif proto == "LLDP" and self.lldp_var.get():
+                self.tree.insert("", tk.END, values=values, tags=('lldp',))
+            else:
+                self.tree.insert("", tk.END, values=values, tags=('default',))
+
+    def save(self):
+        with open('saved.txt', 'w') as saves:
+            for hex in self.packet_hexdumps:
+                saves.write(hex + "\n\n") 
+
+    def info_display(self):
+        info_window = tk.Toplevel()
+        info_window.title("Info")
+        info_window.geometry("800x600")
+
+        packet_show_text = tk.Text(info_window, height=15, font=("Courier", 10), wrap="none")
+        packet_show_text.insert(tk.END, info)
+        packet_show_text.pack(fill=tk.BOTH, expand=True)
 
     def run(self):
         self.window.mainloop()
